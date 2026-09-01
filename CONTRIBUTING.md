@@ -40,23 +40,34 @@ Conventional Commits are appreciated but not required (e.g. `feat:`, `fix:`, `do
 
 ## Releasing
 
-Maintainers only:
+Releases are **automated on push to `main`**. The **Release** workflow builds,
+tests, and publishes to npm with
+[provenance](https://docs.npmjs.com/generating-provenance-statements), then tags
+`vX.Y.Z` and creates a GitHub release — but **only when `package.json`'s version
+is not already published on npm**. Ordinary commits publish nothing.
 
-1. Update the version in **all three** places (a unit test enforces they match):
-   - `package.json`
-   - `openclaw.plugin.json`
-   - `src/version.ts`
-2. Update `CHANGELOG.md` (move items from _Unreleased_ into the new version).
-3. Commit, then tag: `git tag vX.Y.Z && git push --tags`.
-4. The **Release** GitHub Action builds, tests, and publishes to npm with
-   [provenance](https://docs.npmjs.com/generating-provenance-statements). It
-   requires an `NPM_TOKEN` repository secret (an npm automation token).
+One-time setup: add an `NPM_TOKEN` repository secret (an npm **automation**
+token) under **Settings → Secrets and variables → Actions**.
 
-To publish manually instead:
+To cut a release (maintainers):
 
-```bash
-npm publish --provenance --access public
-```
+1. Bump the version (updates `package.json`, `openclaw.plugin.json`,
+   `src/version.ts`, and rolls `CHANGELOG.md`):
+   ```bash
+   npm run release:prepare -- <x.y.z>
+   ```
+2. Edit `CHANGELOG.md` so the new section describes the changes.
+3. Verify: `npm run verify`.
+4. Commit and push to `main`:
+   ```bash
+   git commit -am "chore(release): v<x.y.z>"
+   git push origin main
+   ```
+
+The workflow handles publish, tag, and GitHub release. **Do not** create the tag
+yourself or `npm publish` locally. A published version can't be overwritten — if
+a release breaks, fix forward with a new patch version. See [AGENTS.md](./AGENTS.md)
+for the semver policy.
 
 ## Code of Conduct
 

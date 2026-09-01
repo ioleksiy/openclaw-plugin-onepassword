@@ -66,6 +66,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build",
+    "release:prepare": "node scripts/bump-version.mjs",
     "prepack": "npm run clean && npm run build"
   },
   "dependencies": {
@@ -86,6 +88,7 @@
     "@vitest/coverage-v8": "^2.1.0",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.0.0",
     "openclaw": ">=2026.8.0",
     "prettier": "^3.3.0",
     "rimraf": "^6.0.0",

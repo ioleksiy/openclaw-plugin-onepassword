@@ -273,9 +273,25 @@ npm test
 
 > `--ignore-scripts` is used because the `openclaw` dev dependency runs a Node-version preinstall check; the plugin itself only needs its type definitions to build and test.
 
-## Publishing
+## Releasing
 
-See [CONTRIBUTING.md → Releasing](./CONTRIBUTING.md#releasing). In short: bump the version in `package.json`, `openclaw.plugin.json`, and `src/version.ts` (kept in sync by a test), update `CHANGELOG.md`, tag `vX.Y.Z`, and let the release workflow publish to npm with provenance.
+Releases are **automated on push to `main`**. The `Release` workflow publishes to
+npm (with [provenance](https://docs.npmjs.com/generating-provenance-statements))
+and creates a GitHub release **only when the version in `package.json` is not yet
+on npm** — ordinary commits are a no-op.
+
+To cut a release:
+
+```bash
+npm run release:prepare -- <x.y.z>   # bumps the 3 version files + rolls CHANGELOG
+# edit CHANGELOG.md for the new section, then:
+npm run verify
+git commit -am "chore(release): v<x.y.z>" && git push origin main
+```
+
+The workflow publishes the package and tags `v<x.y.z>`. It requires an `NPM_TOKEN`
+repository secret (an npm **automation** token). See [CONTRIBUTING.md → Releasing](./CONTRIBUTING.md#releasing)
+and [AGENTS.md](./AGENTS.md) for details and the semver policy.
 
 ## License
 
