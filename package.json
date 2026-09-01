@@ -1,0 +1,96 @@
+{
+  "name": "openclaw-plugin-onepassword",
+  "version": "0.1.0",
+  "description": "Native OpenClaw plugin that resolves 1Password secrets in-process (no exec sandbox), plus agent tools for vault/item CRUD.",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "1password",
+    "onepassword",
+    "secrets",
+    "secret-provider",
+    "service-account",
+    "vault"
+  ],
+  "license": "MIT",
+  "author": "OpenClaw 1Password plugin contributors",
+  "homepage": "https://github.com/ioleksiy/openclaw-plugin-onepassword#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ioleksiy/openclaw-plugin-onepassword.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ioleksiy/openclaw-plugin-onepassword/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./resolver": {
+      "types": "./dist/resolver.d.ts",
+      "default": "./dist/resolver.js"
+    },
+    "./openclaw.plugin.json": "./openclaw.plugin.json"
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.8.0",
+      "minGatewayVersion": "2026.8.0"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepack": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "@1password/sdk": "^0.5.0",
+    "typebox": "^1.3.17"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.8.0"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "openclaw": ">=2026.8.0",
+    "prettier": "^3.3.0",
+    "rimraf": "^6.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.1.0"
+  }
+}

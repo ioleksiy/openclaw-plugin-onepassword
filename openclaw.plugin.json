@@ -1,0 +1,104 @@
+{
+  "id": "onepassword",
+  "name": "1Password",
+  "description": "Resolve 1Password secrets in-process into the OpenClaw shared store, and expose 1Password vault/item tools to agents.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true,
+    "onConfigPaths": ["plugins.entries.onepassword"]
+  },
+  "contracts": {
+    "tools": [
+      "1password_list_vaults",
+      "1password_list_items",
+      "1password_get_item",
+      "1password_read_field",
+      "1password_create_item",
+      "1password_update_item",
+      "1password_delete_item"
+    ],
+    "gatewayMethodDispatch": ["onepassword.sync", "onepassword.status"]
+  },
+  "toolMetadata": {
+    "1password_list_vaults": { "optional": true },
+    "1password_list_items": { "optional": true },
+    "1password_get_item": { "optional": true },
+    "1password_read_field": { "optional": true },
+    "1password_create_item": { "optional": true },
+    "1password_update_item": { "optional": true },
+    "1password_delete_item": { "optional": true }
+  },
+  "secretProviderIntegrations": {
+    "op": {
+      "providerAlias": "op",
+      "displayName": "1Password (exec resolver)",
+      "description": "Advanced/optional. Resolves op:// references via a child node resolver. Subject to the exec secret sandbox — requires egress allowlisting to reach the 1Password API. Prefer the in-process store sync for most setups.",
+      "source": "exec",
+      "command": "${node}",
+      "args": ["./dist/resolver.js"],
+      "jsonOnly": true,
+      "passEnv": ["PATH", "HOME", "OP_SERVICE_ACCOUNT_TOKEN"]
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "serviceAccountTokenEnvVar": {
+        "type": "string",
+        "description": "Name of the environment variable holding the 1Password service account token.",
+        "default": "OP_SERVICE_ACCOUNT_TOKEN",
+        "minLength": 1
+      },
+      "integrationName": {
+        "type": "string",
+        "description": "Integration name reported to the 1Password SDK for audit logs.",
+        "default": "openclaw-plugin-onepassword"
+      },
+      "requestTimeoutMs": {
+        "type": "number",
+        "description": "Per-operation timeout for 1Password SDK calls, in milliseconds.",
+        "default": 15000,
+        "minimum": 1000
+      },
+      "syncOnStartup": {
+        "type": "boolean",
+        "description": "Fetch the configured `secrets` mapping from 1Password and write it into the OpenClaw store when the gateway starts.",
+        "default": true
+      },
+      "failFastOnStartup": {
+        "type": "boolean",
+        "description": "If true, a startup sync failure throws and prevents the gateway from starting. If false, the plugin logs the error and lets last-known-good store values be used.",
+        "default": false
+      },
+      "secrets": {
+        "type": "object",
+        "description": "Map of OpenClaw store key -> 1Password secret reference (op://Vault/Item[/Section]/Field). Store keys must match ^[A-Z][A-Z0-9_]{0,127}$.",
+        "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "additionalProperties": {
+          "type": "string",
+          "pattern": "^op://"
+        },
+        "default": {}
+      },
+      "tools": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Agent tool exposure.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Register the read-only 1Password agent tools.",
+            "default": false
+          },
+          "allowWrite": {
+            "type": "boolean",
+            "description": "Also register create/update/delete tools. Requires `enabled`.",
+            "default": false
+          }
+        },
+        "default": {}
+      }
+    }
+  }
+}

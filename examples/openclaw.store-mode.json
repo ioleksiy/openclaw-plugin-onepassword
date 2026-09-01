@@ -1,0 +1,40 @@
+{
+  "$comment": "RECOMMENDED. In-process store sync. The plugin fetches op:// references from 1Password at startup and writes them into OpenClaw's shared store; SecretRefs use source:'store'. No secret values live in this file. Set OP_SERVICE_ACCOUNT_TOKEN on the Gateway process.",
+  "plugins": {
+    "entries": {
+      "onepassword": {
+        "enabled": true,
+        "config": {
+          "serviceAccountTokenEnvVar": "OP_SERVICE_ACCOUNT_TOKEN",
+          "syncOnStartup": true,
+          "secrets": {
+            "SLACK_BOT_TOKEN": "op://MyVault/SlackBot/bot_token",
+            "SLACK_APP_TOKEN": "op://MyVault/SlackBot/app_token",
+            "OPENAI_API_KEY": "op://MyVault/OpenAI/credential"
+          }
+        }
+      }
+    }
+  },
+  "channels": {
+    "slack": {
+      "accounts": {
+        "myworkspace": {
+          "botToken": { "source": "store", "id": "SLACK_BOT_TOKEN" },
+          "appToken": { "source": "store", "id": "SLACK_APP_TOKEN" }
+        }
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "providers": {
+          "openai": {
+            "apiKey": { "source": "store", "id": "OPENAI_API_KEY" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$comment": "ADVANCED. Exec resolver via pluginIntegration, using op:// ids directly on SecretRefs. Runs as a sandboxed child process, so you MUST allowlist the 1Password API host under secrets.egressProxy for it to reach the network. Prefer store mode unless you specifically need op:// ids and native `openclaw secrets reload` re-fetching.",
+  "plugins": {
+    "entries": {
+      "onepassword": {
+        "enabled": true,
+        "config": {
+          "serviceAccountTokenEnvVar": "OP_SERVICE_ACCOUNT_TOKEN"
+        }
+      }
+    }
+  },
+  "secrets": {
+    "providers": {
+      "op": {
+        "source": "exec",
+        "pluginIntegration": { "pluginId": "onepassword", "integrationId": "op" }
+      }
+    },
+    "egressProxy": {
+      "enabled": true,
+      "allowedHosts": ["my.1password.com"]
+    }
+  },
+  "channels": {
+    "slack": {
+      "accounts": {
+        "myworkspace": {
+          "botToken": {
+            "source": "exec",
+            "provider": "op",
+            "id": "op://MyVault/SlackBot/bot_token"
+          },
+          "appToken": {
+            "source": "exec",
+            "provider": "op",
+            "id": "op://MyVault/SlackBot/app_token"
+          }
+        }
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "providers": {
+          "openai": {
+            "apiKey": {
+              "source": "exec",
+              "provider": "op",
+              "id": "op://MyVault/OpenAI/credential"
+            }
+          }
+        }
+      }
+    }
+  }
+}

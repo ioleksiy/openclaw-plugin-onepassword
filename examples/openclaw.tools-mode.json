@@ -1,0 +1,17 @@
+{
+  "$comment": "Enable the 1Password agent tools so the AI can list vaults/items, read fields, and (opt-in) create/update/delete items. Runs in-process. Set OP_SERVICE_ACCOUNT_TOKEN on the Gateway process.",
+  "plugins": {
+    "entries": {
+      "onepassword": {
+        "enabled": true,
+        "config": {
+          "serviceAccountTokenEnvVar": "OP_SERVICE_ACCOUNT_TOKEN",
+          "tools": {
+            "enabled": true,
+            "allowWrite": false
+          }
+        }
+      }
+    }
+  }
+}
