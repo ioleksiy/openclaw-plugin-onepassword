@@ -1,6 +1,6 @@
 {
   "name": "openclaw-plugin-onepassword",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Native OpenClaw plugin that resolves 1Password secrets in-process (no exec sandbox), plus agent tools for vault/item CRUD.",
   "keywords": [
     "openclaw",

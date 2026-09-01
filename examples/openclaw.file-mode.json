@@ -1,0 +1,41 @@
+{
+  "$comment": "File sync mode. Use this when a channel plugin (e.g. Slack) rejects source:'store' and only accepts env/file/exec. The plugin resolves op:// references in-process and writes them to a JSON file that OpenClaw's built-in source:'file' provider reads. The file holds PLAINTEXT secrets: keep it inside the OpenClaw data volume and out of any agent-readable path. Set OP_SERVICE_ACCOUNT_TOKEN on the Gateway process.",
+  "plugins": {
+    "entries": {
+      "onepassword": {
+        "enabled": true,
+        "config": {
+          "serviceAccountTokenEnvVar": "OP_SERVICE_ACCOUNT_TOKEN",
+          "syncToFile": {
+            "path": "/home/node/.openclaw/op-secrets.json",
+            "mode": "json",
+            "secrets": {
+              "SLACK_BOT_TOKEN_A": "op://MyVault/SlackBot/bot_token",
+              "SLACK_APP_TOKEN_A": "op://MyVault/SlackBot/app_token"
+            }
+          }
+        }
+      }
+    }
+  },
+  "secrets": {
+    "providers": {
+      "env-default": { "source": "env" },
+      "op-file": {
+        "source": "file",
+        "path": "/home/node/.openclaw/op-secrets.json",
+        "mode": "json"
+      }
+    }
+  },
+  "channels": {
+    "slack": {
+      "accounts": {
+        "myworkspace": {
+          "botToken": { "source": "file", "provider": "op-file", "id": "/SLACK_BOT_TOKEN_A" },
+          "appToken": { "source": "file", "provider": "op-file", "id": "/SLACK_APP_TOKEN_A" }
+        }
+      }
+    }
+  }
+}

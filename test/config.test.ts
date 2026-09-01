@@ -7,6 +7,7 @@ import {
   DEFAULT_TOKEN_ENV_VAR,
   parsePluginConfig,
   parseSecretsMap,
+  parseSyncToFile,
   readServiceAccountToken,
 } from "../src/config.js";
 
@@ -52,8 +53,8 @@ describe("parsePluginConfig", () => {
 
 describe("parseSecretsMap", () => {
   it("rejects invalid store keys", () => {
-    expect(() => parseSecretsMap({ "lower-case": "op://V/I/f" })).toThrow(/store key/);
-    expect(() => parseSecretsMap({ "1LEADING": "op://V/I/f" })).toThrow(/store key/);
+    expect(() => parseSecretsMap({ "lower-case": "op://V/I/f" })).toThrow(/secrets key/);
+    expect(() => parseSecretsMap({ "1LEADING": "op://V/I/f" })).toThrow(/secrets key/);
   });
 
   it("rejects non op:// references", () => {
@@ -70,6 +71,56 @@ describe("parseSecretsMap", () => {
       OPENAI_API_KEY: "op://Vault/OpenAI/credential",
       A: "op://V/I/f",
     });
+  });
+});
+
+describe("parseSyncToFile", () => {
+  it("returns undefined when absent", () => {
+    expect(parseSyncToFile(undefined)).toBeUndefined();
+    expect(parseSyncToFile(null)).toBeUndefined();
+  });
+
+  it("parses a valid block and defaults mode to json", () => {
+    const cfg = parseSyncToFile({
+      path: "/data/op-secrets.json",
+      secrets: { SLACK_BOT_TOKEN_A: "op://V/Slack/bot" },
+    });
+    expect(cfg).toEqual({
+      path: "/data/op-secrets.json",
+      mode: "json",
+      secrets: { SLACK_BOT_TOKEN_A: "op://V/Slack/bot" },
+    });
+  });
+
+  it("requires a path", () => {
+    expect(() => parseSyncToFile({ secrets: { A: "op://V/I/f" } })).toThrow(/path/);
+  });
+
+  it("rejects unsupported modes", () => {
+    expect(() =>
+      parseSyncToFile({ path: "/x", mode: "singleValue", secrets: { A: "op://V/I/f" } }),
+    ).toThrow(/mode/);
+  });
+
+  it("requires at least one secret", () => {
+    expect(() => parseSyncToFile({ path: "/x", secrets: {} })).toThrow(/at least one/);
+  });
+
+  it("validates keys and references", () => {
+    expect(() => parseSyncToFile({ path: "/x", secrets: { "bad key": "op://V/I/f" } })).toThrow(
+      /syncToFile.secrets key/,
+    );
+    expect(() => parseSyncToFile({ path: "/x", secrets: { GOOD: "nope" } })).toThrow(
+      /syncToFile.secrets\["GOOD"\]/,
+    );
+  });
+
+  it("is surfaced through parsePluginConfig", () => {
+    const config = parsePluginConfig({
+      syncToFile: { path: "/data/op.json", secrets: { KEY: "op://V/I/f" } },
+    });
+    expect(config.syncToFile?.path).toBe("/data/op.json");
+    expect(config.syncToFile?.mode).toBe("json");
   });
 });
 

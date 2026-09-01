@@ -31,12 +31,15 @@ A native [OpenClaw](https://openclaw.ai) plugin that resolves **[1Password](http
 
 ## How it works
 
-There are two ways a plugin can feed secrets to OpenClaw. This plugin ships both, but **the in-process store sync is the recommended path** because it is the only one that reliably bypasses the exec sandbox.
+This plugin can feed secrets to OpenClaw three ways. The in-process modes (store sync and file sync) run inside the Gateway and reliably bypass the exec sandbox; pick based on what the consuming channel/provider accepts.
 
-| Mode                         | Runs where             | Bypasses exec sandbox?           | `SecretRef` you write                  | Vault/item paths live in      |
-| ---------------------------- | ---------------------- | -------------------------------- | -------------------------------------- | ----------------------------- |
-| **Store sync** (default)     | In-process (Gateway)   | ✅ Yes                           | `source: "store"`                      | plugin `config.secrets` map   |
-| **Exec resolver** (advanced) | Sandboxed child `node` | ⚠️ Only with egress allowlisting | `source: "exec"` + `pluginIntegration` | the `SecretRef.id` (`op://…`) |
+| Mode                         | Runs where             | Bypasses exec sandbox?           | `SecretRef` you write                  | Vault/item paths live in       |
+| ---------------------------- | ---------------------- | -------------------------------- | -------------------------------------- | ------------------------------ |
+| **Store sync** (default)     | In-process (Gateway)   | ✅ Yes                           | `source: "store"`                      | plugin `config.secrets` map    |
+| **File sync**                | In-process (Gateway)   | ✅ Yes                           | `source: "file"`                       | plugin `config.syncToFile` map |
+| **Exec resolver** (advanced) | Sandboxed child `node` | ⚠️ Only with egress allowlisting | `source: "exec"` + `pluginIntegration` | the `SecretRef.id` (`op://…`)  |
+
+> **Which in-process mode?** Prefer **store sync** (`source: "store"`). But some bundled channel plugins — notably **Slack** — reject `source: "store"` at config-validation time and accept only `env`, `file`, or `exec`. For those, use **file sync** (`source: "file"`). The two are independent and can run together (e.g. store sync for OpenAI, file sync for Slack).
 
 **Store sync**, in one picture:
 
@@ -141,22 +144,82 @@ Store keys must match `^[A-Z][A-Z0-9_]{0,127}$` (OpenClaw store-id grammar). Val
 
 See [`examples/`](./examples) for complete config files.
 
+## File sync mode (for channels that reject `source: "store"`)
+
+Some bundled channel plugins — **Slack** in particular — reject `source: "store"` SecretRefs at config-validation time and accept only `env`, `file`, or `exec`. Because this plugin runs in-process, it can resolve `op://` references and write them to a JSON file that OpenClaw's built-in **`source: "file"`** provider reads — which those channels accept.
+
+1. **Configure `syncToFile`** in the plugin config (independent of `secrets`; both can be active):
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "onepassword": {
+        "enabled": true,
+        "config": {
+          "serviceAccountTokenEnvVar": "OP_SERVICE_ACCOUNT_TOKEN",
+          "syncToFile": {
+            "path": "/home/node/.openclaw/op-secrets.json",
+            "mode": "json",
+            "secrets": {
+              "SLACK_BOT_TOKEN_A": "op://MyVault/SlackBot/bot_token",
+              "SLACK_APP_TOKEN_A": "op://MyVault/SlackBot/app_token"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+2. **Declare a `file` provider and reference the keys** with `source: "file"` (the `id` is a JSON pointer, `/KEY`):
+
+```json
+{
+  "secrets": {
+    "providers": {
+      "op-file": {
+        "source": "file",
+        "path": "/home/node/.openclaw/op-secrets.json",
+        "mode": "json"
+      }
+    }
+  },
+  "channels": {
+    "slack": {
+      "accounts": {
+        "myworkspace": {
+          "botToken": { "source": "file", "provider": "op-file", "id": "/SLACK_BOT_TOKEN_A" },
+          "appToken": { "source": "file", "provider": "op-file", "id": "/SLACK_APP_TOKEN_A" }
+        }
+      }
+    }
+  }
+}
+```
+
+The file is written **atomically** (temp file + rename) with `0600` permissions. Keys that fail to resolve keep their last-known-good value from the existing file, so a transient 1Password failure doesn't break a running channel. See [`examples/openclaw.file-mode.json`](./examples/openclaw.file-mode.json).
+
+> **⚠️ The sync file contains plaintext secret values.** It lives in the OpenClaw data volume (same trust boundary as the SQLite store). Keep its path **inside that volume and outside any path an agent can read** — otherwise an agent with file tools could exfiltrate it. Add the file (or its directory) to your agent file-access denylist (e.g. `tools.exec.denyPaths` or the equivalent for your sandbox).
+
 ## Configuration reference
 
 All keys live under `plugins.entries.onepassword.config`.
 
-| Key                         | Type    | Default                         | Description                                                                                                                   |
-| --------------------------- | ------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `serviceAccountTokenEnvVar` | string  | `"OP_SERVICE_ACCOUNT_TOKEN"`    | Name of the environment variable holding the service account token.                                                           |
-| `secrets`                   | object  | `{}`                            | Map of **store key → `op://…` reference**. Store keys must match `^[A-Z][A-Z0-9_]{0,127}$`.                                   |
-| `syncOnStartup`             | boolean | `true`                          | Fetch `secrets` from 1Password and write to the store at Gateway startup.                                                     |
-| `failFastOnStartup`         | boolean | `false`                         | If `true`, a startup sync failure throws and prevents startup. If `false`, log and fall back to last-known-good store values. |
-| `integrationName`           | string  | `"openclaw-plugin-onepassword"` | Integration name reported to 1Password audit logs.                                                                            |
-| `requestTimeoutMs`          | number  | `15000`                         | Per-operation timeout for 1Password SDK calls.                                                                                |
-| `tools.enabled`             | boolean | `false`                         | Register the read-only 1Password agent tools.                                                                                 |
-| `tools.allowWrite`          | boolean | `false`                         | Also register create/update/delete tools. Requires `tools.enabled`.                                                           |
+| Key                         | Type    | Default                         | Description                                                                                                                                                   |
+| --------------------------- | ------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serviceAccountTokenEnvVar` | string  | `"OP_SERVICE_ACCOUNT_TOKEN"`    | Name of the environment variable holding the service account token.                                                                                           |
+| `secrets`                   | object  | `{}`                            | Map of **store key → `op://…` reference** (store sync). Keys must match `^[A-Z][A-Z0-9_]{0,127}$`.                                                            |
+| `syncToFile`                | object  | –                               | File sync block: `{ path, mode: "json", secrets }`. See [File sync mode](#file-sync-mode-for-channels-that-reject-source-store).                              |
+| `syncOnStartup`             | boolean | `true`                          | Fetch configured secrets from 1Password and sync them (store + file) at Gateway startup.                                                                      |
+| `failFastOnStartup`         | boolean | `false`                         | If `true`, a startup sync failure (resolve, store write, or file write) throws and prevents startup. If `false`, log and fall back to last-known-good values. |
+| `integrationName`           | string  | `"openclaw-plugin-onepassword"` | Integration name reported to 1Password audit logs.                                                                                                            |
+| `requestTimeoutMs`          | number  | `15000`                         | Per-operation timeout for 1Password SDK calls.                                                                                                                |
+| `tools.enabled`             | boolean | `false`                         | Register the read-only 1Password agent tools.                                                                                                                 |
+| `tools.allowWrite`          | boolean | `false`                         | Also register create/update/delete tools. Requires `tools.enabled`.                                                                                           |
 
-The plugin **hardcodes no vault names, item paths, or field names**. The only 1Password-specific configuration is the env var name and the `secrets` map you provide.
+The plugin **hardcodes no vault names, item paths, or field names**. The only 1Password-specific configuration is the env var name and the `secrets` / `syncToFile.secrets` maps you provide.
 
 ## Agent tools (optional)
 
@@ -189,8 +252,8 @@ Set `tools.enabled: true` to expose in-process tools to the agent. Read tools re
 
 Both require the `operator.admin` scope.
 
-- **`onepassword.sync`** — re-fetch every configured secret from 1Password and write it into the store. Returns `{ written, total, resolveErrors, storeErrors }`.
-- **`onepassword.status`** — non-secret health/config summary: `{ version, serviceAccountTokenEnvVar, tokenPresent, syncOnStartup, managedStoreKeys, toolsEnabled, toolsWriteEnabled }`.
+- **`onepassword.sync`** — re-fetch every configured secret from 1Password and write it to the store and/or the sync file. Returns `{ written, fileWritten, total, resolveErrors, storeErrors, fileErrors }`.
+- **`onepassword.status`** — non-secret health/config summary: `{ version, serviceAccountTokenEnvVar, tokenPresent, syncOnStartup, managedStoreKeys, syncToFileEnabled, managedFileKeys, filePath, toolsEnabled, toolsWriteEnabled }`.
 
 ## Refreshing secrets at runtime
 
@@ -247,19 +310,22 @@ Use the host that matches your 1Password account region. If your environment can
 ## Security notes
 
 - **The token is the crown jewel.** Anyone with the service account token has the service account's access. Scope the service account to the minimum vaults required, and inject the token via your platform's secret mechanism — never commit it.
-- **No plaintext secrets in config.** The plugin only reads an env var name and `op://` references; resolved values live only in OpenClaw's store.
+- **No plaintext secrets in config.** The plugin only reads an env var name and `op://` references; resolved values live only in OpenClaw's store (store sync) or the sync file (file sync).
+- **The file sync output is plaintext.** If you use `syncToFile`, keep its path inside the OpenClaw data volume and out of any agent-readable path; add it to your agent file-access denylist. See [File sync mode](#file-sync-mode-for-channels-that-reject-source-store).
 - **Plugin code runs in your Gateway process** with full Gateway privileges (this is true of every OpenClaw plugin). Review the source before installing.
 - **Write tools are opt-in** (`tools.allowWrite`) and **concealed fields are redacted** by read tools unless `includeSecrets: true`.
 - Report vulnerabilities per [SECURITY.md](./SECURITY.md).
 
 ## Troubleshooting
 
-| Symptom                                     | Likely cause / fix                                                                                                    |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `... token not found` at startup            | The env var named by `serviceAccountTokenEnvVar` is unset on the Gateway process.                                     |
-| `SECRETS_PROVIDER_DEGRADED` for a store ref | The store key hasn't been populated yet — run `onepassword.sync`, or check the startup logs for resolve errors.       |
-| Resolve error `NOT_FOUND`                   | The `op://` reference is wrong or the service account can't access that vault/item/field.                             |
-| Exec resolver returns nothing               | Sandbox is blocking network — add your 1Password host to `secrets.egressProxy.allowedHosts`, or switch to store sync. |
+| Symptom                                                                         | Likely cause / fix                                                                                                                                      |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `... token not found` at startup                                                | The env var named by `serviceAccountTokenEnvVar` is unset on the Gateway process.                                                                       |
+| `SECRETS_PROVIDER_DEGRADED` for a store ref                                     | The store key hasn't been populated yet — run `onepassword.sync`, or check the startup logs for resolve errors.                                         |
+| `source: must be equal to constant (allowed: "env"/"file"/"exec")` on a channel | That channel (e.g. Slack) rejects `source: "store"`. Use [File sync mode](#file-sync-mode-for-channels-that-reject-source-store) with `source: "file"`. |
+| `source: "file"` ref resolves empty                                             | The sync file wasn't written yet, or the `id` JSON pointer is wrong (must be `/KEY`). Check `onepassword.status` → `filePath` and startup logs.         |
+| Resolve error `NOT_FOUND`                                                       | The `op://` reference is wrong or the service account can't access that vault/item/field.                                                               |
+| Exec resolver returns nothing                                                   | Sandbox is blocking network — add your 1Password host to `secrets.egressProxy.allowedHosts`, or switch to store sync.                                   |
 
 ## Development
 

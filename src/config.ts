@@ -22,14 +22,27 @@ export interface OnePasswordToolsConfig {
   allowWrite: boolean;
 }
 
+export type SyncToFileMode = "json";
+
+export interface SyncToFileConfig {
+  /** Absolute path of the JSON file to write inside the OpenClaw data volume. */
+  path: string;
+  /** File format. Only "json" (flat object, JSON-pointer ids) is supported. */
+  mode: SyncToFileMode;
+  /** Map of file key -> 1Password secret reference. */
+  secrets: Record<string, string>;
+}
+
 export interface OnePasswordPluginConfig {
   serviceAccountTokenEnvVar: string;
   integrationName: string;
   requestTimeoutMs: number;
   syncOnStartup: boolean;
   failFastOnStartup: boolean;
-  /** Map of OpenClaw store key -> 1Password secret reference. */
+  /** Map of OpenClaw store key -> 1Password secret reference (store sync). */
   secrets: Record<string, string>;
+  /** Optional JSON-file sync, for channels that reject `source: "store"`. */
+  syncToFile?: SyncToFileConfig;
   tools: OnePasswordToolsConfig;
 }
 
@@ -68,24 +81,46 @@ function optionalPositiveNumber(value: unknown, field: string): number | undefin
   return value;
 }
 
-/** Validate a single `storeKey -> op://...` secrets mapping. */
-export function parseSecretsMap(value: unknown): Record<string, string> {
+/** Validate a `key -> op://...` secrets mapping. `label` names it in errors. */
+export function parseSecretsMap(value: unknown, label = "secrets"): Record<string, string> {
   const raw = asRecord(value);
   const out: Record<string, string> = {};
   for (const [key, ref] of Object.entries(raw)) {
     if (!STORE_KEY_PATTERN.test(key)) {
       throw new ConfigError(
-        `secrets store key "${key}" is invalid; keys must match ${STORE_KEY_PATTERN.source} (uppercase env-var grammar).`,
+        `${label} key "${key}" is invalid; keys must match ${STORE_KEY_PATTERN.source} (uppercase env-var grammar).`,
       );
     }
     if (typeof ref !== "string" || !OP_REFERENCE_PATTERN.test(ref)) {
       throw new ConfigError(
-        `secrets["${key}"] must be a 1Password reference like "op://Vault/Item/field"; got ${JSON.stringify(ref)}.`,
+        `${label}["${key}"] must be a 1Password reference like "op://Vault/Item/field"; got ${JSON.stringify(ref)}.`,
       );
     }
     out[key] = ref;
   }
   return out;
+}
+
+/** Parse and validate the optional `syncToFile` block. */
+export function parseSyncToFile(value: unknown): SyncToFileConfig | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new ConfigError('"syncToFile" must be an object.');
+  }
+  const raw = value as Record<string, unknown>;
+  const path = optionalString(raw.path, "syncToFile.path");
+  if (!path) {
+    throw new ConfigError('"syncToFile.path" is required and must be a non-empty string.');
+  }
+  const mode = optionalString(raw.mode, "syncToFile.mode") ?? "json";
+  if (mode !== "json") {
+    throw new ConfigError('"syncToFile.mode" must be "json" (the only supported mode).');
+  }
+  const secrets = parseSecretsMap(raw.secrets, "syncToFile.secrets");
+  if (Object.keys(secrets).length === 0) {
+    throw new ConfigError('"syncToFile.secrets" must contain at least one key -> op:// mapping.');
+  }
+  return { path, mode, secrets };
 }
 
 function parseTools(value: unknown): OnePasswordToolsConfig {
@@ -117,6 +152,7 @@ export function parsePluginConfig(input: unknown): OnePasswordPluginConfig {
     syncOnStartup: optionalBoolean(raw.syncOnStartup, "syncOnStartup") ?? true,
     failFastOnStartup: optionalBoolean(raw.failFastOnStartup, "failFastOnStartup") ?? false,
     secrets: parseSecretsMap(raw.secrets),
+    syncToFile: parseSyncToFile(raw.syncToFile),
     tools: parseTools(raw.tools),
   };
 }

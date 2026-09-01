@@ -21,17 +21,37 @@ import {
   type OnePasswordPluginConfig,
 } from "./config.js";
 import { createOnePasswordClient, type OnePasswordClient } from "./op-client.js";
-import {
-  syncSecrets,
-  syncResultIsClean,
-  type StoreWriter,
-  type SyncLogger,
-} from "./secret-sync.js";
+import { syncSecrets, type StoreWriter, type SyncLogger } from "./secret-sync.js";
+import { readExistingKeyCount, syncSecretsToFile } from "./file-sync.js";
 import { createTools } from "./tools.js";
 import { PLUGIN_ID, PLUGIN_VERSION } from "./version.js";
 
 const SERVICE_ID = "onepassword-secret-sync";
 const STORE_SET_METHOD = "secrets.store.set";
+
+/** Combined result of the store sync and file sync passes. */
+interface UnifiedSyncResult {
+  /** Store keys written to the OpenClaw shared store. */
+  written: string[];
+  /** File keys written to the JSON sync file. */
+  fileWritten: string[];
+  /** Total configured references across both modes. */
+  total: number;
+  /** Key -> message for references that failed to resolve (either mode). */
+  resolveErrors: Record<string, string>;
+  /** Store key -> message for values that resolved but failed to store. */
+  storeErrors: Record<string, string>;
+  /** File key -> message when persisting the sync file failed. */
+  fileErrors: Record<string, string>;
+}
+
+function unifiedSyncIsClean(result: UnifiedSyncResult): boolean {
+  return (
+    Object.keys(result.resolveErrors).length === 0 &&
+    Object.keys(result.storeErrors).length === 0 &&
+    Object.keys(result.fileErrors).length === 0
+  );
+}
 
 /**
  * StoreWriter backed by the `secrets.store.set` Gateway RPC dispatched through
@@ -120,20 +140,62 @@ export default definePluginEntry({
     const getClient = createClientFactory(config);
     const store = createStoreWriter(api);
 
-    const runSync = async (): Promise<ReturnType<typeof syncSecrets>> => {
+    const storeKeyCount = Object.keys(config.secrets).length;
+    const fileKeyCount = config.syncToFile ? Object.keys(config.syncToFile.secrets).length : 0;
+    const hasSyncWork = storeKeyCount > 0 || fileKeyCount > 0;
+
+    // Resolve configured references from 1Password and write them to the store
+    // and/or the JSON sync file, merging both passes into one result.
+    const runSync = async (): Promise<UnifiedSyncResult> => {
       const client = await getClient();
-      return syncSecrets({ client, store, secrets: config.secrets, logger });
+      const result: UnifiedSyncResult = {
+        written: [],
+        fileWritten: [],
+        total: 0,
+        resolveErrors: {},
+        storeErrors: {},
+        fileErrors: {},
+      };
+      if (storeKeyCount > 0) {
+        const r = await syncSecrets({ client, store, secrets: config.secrets, logger });
+        result.written = r.written;
+        result.total += r.total;
+        Object.assign(result.resolveErrors, r.resolveErrors);
+        result.storeErrors = r.storeErrors;
+      }
+      if (config.syncToFile) {
+        const f = await syncSecretsToFile({
+          client,
+          path: config.syncToFile.path,
+          secrets: config.syncToFile.secrets,
+          logger,
+        });
+        result.fileWritten = f.fileWritten;
+        result.total += f.total;
+        Object.assign(result.resolveErrors, f.resolveErrors);
+        result.fileErrors = f.fileErrors;
+      }
+      return result;
     };
 
     // --- Startup / reload sync service -----------------------------------
     api.registerService({
       id: SERVICE_ID,
       async start() {
+        // On startup, report whether a previous boot left a populated sync file.
+        if (config.syncToFile) {
+          const count = await readExistingKeyCount(config.syncToFile.path);
+          if (count !== undefined) {
+            logger?.info?.(
+              `onepassword: existing sync file ${config.syncToFile.path} has ${count} key(s)`,
+            );
+          }
+        }
         if (!config.syncOnStartup) {
           logger?.debug?.("onepassword: syncOnStartup disabled; skipping startup sync");
           return;
         }
-        if (Object.keys(config.secrets).length === 0) {
+        if (!hasSyncWork) {
           logger?.debug?.("onepassword: no secrets configured; nothing to sync at startup");
           return;
         }
@@ -145,9 +207,10 @@ export default definePluginEntry({
         }
         try {
           const result = await runSync();
-          if (config.failFastOnStartup && !syncResultIsClean(result)) {
+          if (config.failFastOnStartup && !unifiedSyncIsClean(result)) {
+            const done = result.written.length + result.fileWritten.length;
             throw new Error(
-              `onepassword: startup sync failed for ${result.total - result.written.length} of ${result.total} secret(s)`,
+              `onepassword: startup sync failed for ${result.total - done} of ${result.total} secret(s)`,
             );
           }
         } catch (err) {
@@ -170,9 +233,11 @@ export default definePluginEntry({
           const result = await runSync();
           respond(true, {
             written: result.written,
+            fileWritten: result.fileWritten,
             total: result.total,
             resolveErrors: result.resolveErrors,
             storeErrors: result.storeErrors,
+            fileErrors: result.fileErrors,
           });
         } catch (err) {
           respond(false, undefined, {
@@ -194,6 +259,9 @@ export default definePluginEntry({
           tokenPresent: readServiceAccountToken(config) !== undefined,
           syncOnStartup: config.syncOnStartup,
           managedStoreKeys: Object.keys(config.secrets),
+          syncToFileEnabled: config.syncToFile !== undefined,
+          managedFileKeys: config.syncToFile ? Object.keys(config.syncToFile.secrets) : [],
+          filePath: config.syncToFile?.path ?? null,
           toolsEnabled: config.tools.enabled,
           toolsWriteEnabled: config.tools.allowWrite,
         });

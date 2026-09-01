@@ -2,7 +2,7 @@
   "id": "onepassword",
   "name": "1Password",
   "description": "Resolve 1Password secrets in-process into the OpenClaw shared store, and expose 1Password vault/item tools to agents.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "activation": {
     "onStartup": true,
     "onConfigPaths": ["plugins.entries.onepassword"]
@@ -63,23 +63,48 @@
       },
       "syncOnStartup": {
         "type": "boolean",
-        "description": "Fetch the configured `secrets` mapping from 1Password and write it into the OpenClaw store when the gateway starts.",
+        "description": "Fetch the configured secrets from 1Password and sync them (store and/or file) when the gateway starts.",
         "default": true
       },
       "failFastOnStartup": {
         "type": "boolean",
-        "description": "If true, a startup sync failure throws and prevents the gateway from starting. If false, the plugin logs the error and lets last-known-good store values be used.",
+        "description": "If true, a startup sync failure (resolve, store write, or file write) throws and prevents the gateway from starting. If false, the plugin logs the error and falls back to last-known-good values.",
         "default": false
       },
       "secrets": {
         "type": "object",
-        "description": "Map of OpenClaw store key -> 1Password secret reference (op://Vault/Item[/Section]/Field). Store keys must match ^[A-Z][A-Z0-9_]{0,127}$.",
+        "description": "Map of OpenClaw store key -> 1Password secret reference (op://Vault/Item[/Section]/Field). Store keys must match ^[A-Z][A-Z0-9_]{0,127}$. Referenced with source:'store'.",
         "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
         "additionalProperties": {
           "type": "string",
           "pattern": "^op://"
         },
         "default": {}
+      },
+      "syncToFile": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Resolve op:// references and write them to a JSON file that OpenClaw's source:'file' provider reads. For channels (e.g. Slack) that reject source:'store'. Independent of `secrets`; both can be active.",
+        "required": ["path", "secrets"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path of the JSON file to write. Keep it inside the OpenClaw data volume and out of any agent-readable path. Written 0600.",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["json"],
+            "default": "json",
+            "description": "File format. Only 'json' (flat object; SecretRef ids are JSON pointers like /KEY) is supported."
+          },
+          "secrets": {
+            "type": "object",
+            "description": "Map of file key -> 1Password secret reference. Keys must match ^[A-Z][A-Z0-9_]{0,127}$.",
+            "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+            "additionalProperties": { "type": "string", "pattern": "^op://" }
+          }
+        }
       },
       "tools": {
         "type": "object",

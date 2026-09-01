@@ -20,6 +20,7 @@ architecture and user-facing docs.
 | `src/config.ts`            | Config parsing/validation.                                                                  |
 | `src/op-client.ts`         | Thin wrapper over `@1password/sdk` (the `OnePasswordClient` interface).                     |
 | `src/secret-sync.ts`       | Resolve `op://` refs and write them to the store.                                           |
+| `src/file-sync.ts`         | Resolve `op://` refs and write them to a JSON file (atomic, `0600`).                        |
 | `src/tools.ts`             | Optional agent tools.                                                                       |
 | `src/resolver.ts`          | Optional standalone exec resolver (advanced mode).                                          |
 | `src/version.ts`           | `PLUGIN_VERSION` / `PLUGIN_ID` constants.                                                   |
