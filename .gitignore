@@ -9,3 +9,6 @@ coverage/
 *.tsbuildinfo
 .npm/
 .vitest/
+
+# local portable bundle artifact
+*.bundle
